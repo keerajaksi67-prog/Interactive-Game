@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ร้านเบเกอรี่เศษส่วน - Fraction Bakery</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;600;700;800&family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Prompt', 'Sarabun', sans-serif;
+            background-color: #fdf6e7;
+            user-select: none;
+        }
+        .bakery-pattern {
+            background-color: #fff9ef;
+            background-image: radial-gradient(#ffd8a8 1.5px, transparent 1.5px), radial-gradient(#ffd8a8 1.5px, #fff9ef 1.5px);
+            background-size: 60px 60px;
+            background-position: 0 0, 30px 30px;
+        }
+        .cake-pattern-orange {
+            background: repeating-linear-gradient(
+                45deg,
+                #ff922b,
+                #ff922b 12px,
+                #ffa94d 12px,
+                #ffa94d 24px
+            );
+        }
+        .cake-pattern-milk {
+            background: repeating-linear-gradient(
+                -45deg,
+                #74c0fc,
+                #74c0fc 12px,
+                #a5d8ff 12px,
+                #a5d8ff 24px
+            );
+        }
+        .pulse-btn {
+            animation: pulse-glow 2s infinite;
+        }
+        @keyframes pulse-glow {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 15px rgba(255, 146, 43, 0.5); }
+            50% { transform: scale(1.03); box-shadow: 0 0 25px rgba(255, 146, 43, 0.8); }
+        }
+        .tray-grid-transition {
+            transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-2 sm:p-4 bakery-pattern">
+
+    <div id="root" class="w-full max-w-4xl"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Sound Generator using Web Audio API
+        const playSound = (type, enabled = true) => {
+            if (!enabled) return;
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                if (type === 'click') {
+                    osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.08);
+                    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.08);
+                } else if (type === 'split') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.2);
+                    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.25);
+                } else if (type === 'win') {
+                    const now = audioCtx.currentTime;
+                    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+                    notes.forEach((freq, idx) => {
+                        const o = audioCtx.createOscillator();
+                        const g = audioCtx.createGain();
+                        o.connect(g);
+                        g.connect(audioCtx.destination);
+                        o.frequency.setValueAtTime(freq, now + idx * 0.1);
+                        g.gain.setValueAtTime(0.2, now + idx * 0.1);
+                        g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.1 + 0.25);
+                        o.start(now + idx * 0.1);
+                        o.stop(now + idx * 0.1 + 0.25);
+                    });
+                } else if (type === 'wrong') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(220, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(110, audioCtx.currentTime + 0.3);
+                    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.3);
+                }
+            } catch (e) {
+                console.log("Audio play error", e);
+            }
+        };
+
+        // Helper to compute GCD and LCM
+        const gcd = (a, b) => b === 0 ? a : gcd(b, a % b);
+        const lcm = (a, b) => (a * b) / gcd(a, b);
+
+        const LEVELS = [
+            {
+                id: 1,
+                title: 'Level 2-3: ร้านเบเกอรี่เศษส่วน',
+                cakeA: { name: 'เค้กส้ม', num: 1, den: 2, color: 'orange', code: 'A' },
+                cakeB: { name: 'เค้กนม', num: 1, den: 3, color: 'milk', code: 'B' },
+                targetPoints: 250
+            },
+            {
+                id: 2,
+                title: 'Level 2-4: เค้กสตรอเบอร์รี่ & ชาเขียว',
+                cakeA: { name: 'เค้กสตรอเบอร์รี่', num: 1, den: 4, color: 'orange', code: 'A' },
+                cakeB: { name: 'เค้กชาเขียว', num: 1, den: 2, color: 'milk', code: 'B' },
+                targetPoints: 350
+            },
+            {
+                id: 3,
+                title: 'Level 2-5: เค้กบลูเบอร์รี่ & ช็อกโกแลต',
+                cakeA: { name: 'เค้กบลูเบอร์รี่', num: 1, den: 3, color: 'orange', code: 'A' },
+                cakeB: { name: 'เค้กช็อกโกแลต', num: 1, den: 4, color: 'milk', code: 'B' },
+                targetPoints: 500
+            }
+        ];
+
+        function App() {
+            const [currentLevelIdx, setCurrentLevelIdx] = useState(0);
+            const [score, setScore] = useState(250);
+            const [soundEnabled, setSoundEnabled] = useState(true);
+            const [isSplit, setIsSplit] = useState(false);
+            
+            // Inputs for equation
+            const [inputNum, setInputNum] = useState('');
+            const [inputDen, setInputDen] = useState('');
+            
+            // UI States
+            const [feedback, setFeedback] = useState(null); // { type: 'success'|'error', msg: string }
+            const [showSettings, setShowSettings] = useState(false);
+
+            const level = LEVELS[currentLevelIdx];
+            const commonDen = lcm(level.cakeA.den, level.cakeB.den);
+            const newNumA = level.cakeA.num * (commonDen / level.cakeA.den);
+            const newNumB = level.cakeB.num * (commonDen / level.cakeB.den);
+            const correctSumNum = newNumA + newNumB;
+            const correctSumDen = commonDen;
+
+            const handleSplit = () => {
+                playSound('split', soundEnabled);
+                setIsSplit(true);
+            };
+
+            const handleReset = () => {
+                playSound('click', soundEnabled);
+                setIsSplit(false);
+                setInputNum('');
+                setInputDen('');
+                setFeedback(null);
+            };
+
+            const handleCheck = () => {
+                playSound('click', soundEnabled);
+
+                if (!isSplit) {
+                    setFeedback({ type: 'warning', msg: 'กดปุ่ม "ผ่าแบ่งส่วนให้เท่ากัน!" ก่อนนะจ๊ะ เพื่อให้ตัวส่วนเท่ากัน!' });
+                    return;
+                }
+
+                const numVal = parseInt(inputNum, 10);
+                const denVal = parseInt(inputDen, 10);
+
+                if (isNaN(numVal) || isNaN(denVal) || denVal === 0) {
+                    setFeedback({ type: 'warning', msg: 'กรุณากรอกตัวเลขเศษและส่วนให้ถูกต้องครับ' });
+                    return;
+                }
+
+                // Check if equivalent to correct sum
+                if (numVal * correctSumDen === denVal * correctSumNum) {
+                    playSound('win', soundEnabled);
+                    setFeedback({ type: 'success', msg: `ถูกต้องแล้วครับ! 🎉 ${numVal}/${denVal} (${level.cakeA.num}/${level.cakeA.den} + ${level.cakeB.num}/${level.cakeB.den} = ${correctSumNum}/${correctSumDen})` });
+                    setScore(prev => prev + 100);
+
+                    if (window.confetti) {
+                        window.confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
+                    }
+                } else {
+                    playSound('wrong', soundEnabled);
+                    setFeedback({ type: 'error', msg: `ยังไม่ถูกต้อง ลองนับจำนวนช่องรวมที่ผ่าแบ่งใหม่ดูนะ! (${newNumA}/${commonDen} + ${newNumB}/${commonDen} = ?)` });
+                }
+            };
+
+            const nextLevel = () => {
+                if (currentLevelIdx < LEVELS.length - 1) {
+                    setCurrentLevelIdx(prev => prev + 1);
+                    handleReset();
+                } else {
+                    alert('คุณผ่านครบทุกระดับชั้นของร้านเบเกอรี่แล้ว! เก่งมากๆ!');
+                    setCurrentLevelIdx(0);
+                    handleReset();
+                }
+            };
+
+            return (
+                <div className="bg-white rounded-3xl shadow-2xl border-4 border-amber-300 overflow-hidden text-slate-800">
+                    
+                    {/* Header Bar */}
+                    <div className="bg-amber-400 px-4 py-3 sm:px-6 flex flex-wrap items-center justify-between border-b-4 border-amber-500 gap-2">
+                        <div className="flex items-center gap-2">
+                            <button 
+                                onClick={handleReset}
+                                className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-xl font-bold shadow text-xs sm:text-sm flex items-center gap-1 transition"
+                            >
+                                🚪 [X] ออก
+                            </button>
+                            <h1 className="font-bold text-amber-950 text-base sm:text-xl flex items-center gap-1">
+                                🎯 {level.title}
+                            </h1>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <div className="bg-amber-100 text-amber-900 border-2 border-amber-500 font-bold px-3 py-1 rounded-full text-xs sm:text-sm flex items-center gap-1 shadow-inner">
+                                ⭐ {score} pts
+                            </div>
+
+                            <button 
+                                onClick={() => setSoundEnabled(!soundEnabled)} 
+                                className="p-2 bg-amber-200 hover:bg-amber-300 rounded-full text-lg shadow border border-amber-400 transition"
+                                title="เปิด/ปิด เสียง"
+                            >
+                                {soundEnabled ? '🔊' : '🔇'}
+                            </button>
+
+                            <button 
+                                onClick={() => setShowSettings(!showSettings)}
+                                className="p-2 bg-amber-200 hover:bg-amber-300 rounded-full text-lg shadow border border-amber-400 transition"
+                                title="ตั้งค่า"
+                            >
+                                ⚙️
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Settings Modal */}
+                    {showSettings && (
+                        <div className="bg-amber-50 p-4 border-b-2 border-amber-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm">
+                            <div>
+                                <span className="font-bold text-amber-900">เลือกด่านทดสอบ: </span>
+                                <select 
+                                    value={currentLevelIdx} 
+                                    onChange={(e) => { setCurrentLevelIdx(Number(e.target.value)); handleReset(); setShowSettings(false); }}
+                                    className="ml-2 bg-white border border-amber-300 rounded-lg p-1 font-semibold"
+                                >
+                                    {LEVELS.map((lvl, idx) => (
+                                        <option key={lvl.id} value={idx}>{lvl.title}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <button 
+                                onClick={() => setShowSettings(false)}
+                                className="text-xs bg-amber-200 text-amber-900 px-3 py-1 rounded-lg font-bold"
+                            >
+                                ปิด
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Mascot / Order Prompt */}
+                    <div className="bg-orange-50 px-4 py-3 sm:px-6 border-b border-amber-200 flex items-center gap-3 sm:gap-4">
+                        <div className="text-3xl sm:text-4xl bg-orange-200 p-2 rounded-2xl border-2 border-orange-300 shadow-sm shrink-0">
+                            👨‍🍳
+                        </div>
+                        <div className="bg-white p-3 rounded-2xl border-2 border-orange-200 shadow-sm text-amber-950 font-semibold text-sm sm:text-base flex-1">
+                            "ช่วยช่างเค้กผสม<span className="text-orange-600 font-bold">{level.cakeA.name} {level.cakeA.num}/{level.cakeA.den} ถาด</span> กับ <span className="text-blue-600 font-bold">{level.cakeB.name} {level.cakeB.num}/{level.cakeB.den} ถาด</span> หน่อยนะ!"
+                        </div>
+                    </div>
+
+                    {/* Main Content Area */}
+                    <div className="p-4 sm:p-6 space-y-6">
+                        
+                        {/* Workspace / Cake Pans */}
+                        <div className="bg-amber-50/80 border-2 border-amber-200 rounded-2xl p-4 sm:p-6 shadow-inner relative">
+                            <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-amber-800 text-center mb-4">
+                                🥣 พื้นที่กะทะผสมเค้ก (WORKSPACE)
+                            </h2>
+
+                            {/* Trays Comparison Row */}
+                            <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 my-2">
+                                
+                                {/* Cake Tray A */}
+                                <div className="flex flex-col items-center gap-2 w-full max-w-xs">
+                                    <span className="font-bold text-amber-900 text-sm sm:text-base">
+                                        [บล็อกเค้ก A: {level.cakeA.num}/{level.cakeA.den}] - {level.cakeA.name}
+                                    </span>
+                                    <div className="w-full h-28 sm:h-32 bg-slate-100 rounded-xl border-4 border-amber-700 p-2 shadow-md relative overflow-hidden flex">
+                                        {Array.from({ length: isSplit ? commonDen : level.cakeA.den }).map((_, idx) => {
+                                            const activeSlices = isSplit ? newNumA : level.cakeA.num;
+                                            const isFilled = idx < activeSlices;
+                                            return (
+                                                <div 
+                                                    key={idx} 
+                                                    className={`h-full flex-1 border-r-2 ${idx === (isSplit ? commonDen : level.cakeA.den) - 1 ? 'border-r-0' : 'border-slate-300'} ${isSplit ? 'border-dashed border-amber-400' : ''} transition-all duration-300 relative flex items-center justify-center`}
+                                                >
+                                                    {isFilled && (
+                                                        <div className="w-full h-full cake-pattern-orange opacity-90 rounded-sm animate-fade-in flex items-center justify-center">
+                                                            <span className="text-xs font-bold text-white drop-shadow bg-orange-700/40 px-1 rounded">🍰</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <span className="text-xs sm:text-sm font-medium text-amber-800">
+                                        {isSplit ? `(= ${newNumA}/${commonDen} ช่อง)` : `(แบ่ง ${level.cakeA.den} ช่อง - ${level.cakeA.name.replace('เค้ก', '')} ${level.cakeA.num})`}
+                                    </span>
+                                </div>
+
+                                {/* Plus Symbol */}
+                                <div className="text-3xl font-extrabold text-amber-600 bg-amber-200/60 w-10 h-10 rounded-full flex items-center justify-center shadow-sm">
+                                    +
+                                </div>
+
+                                {/* Cake Tray B */}
+                                <div className="flex flex-col items-center gap-2 w-full max-w-xs">
+                                    <span className="font-bold text-amber-900 text-sm sm:text-base">
+                                        [บล็อกเค้ก B: {level.cakeB.num}/{level.cakeB.den}] - {level.cakeB.name}
+                                    </span>
+                                    <div className="w-full h-28 sm:h-32 bg-slate-100 rounded-xl border-4 border-amber-700 p-2 shadow-md relative overflow-hidden flex">
+                                        {Array.from({ length: isSplit ? commonDen : level.cakeB.den }).map((_, idx) => {
+                                            const activeSlices = isSplit ? newNumB : level.cakeB.num;
+                                            const isFilled = idx < activeSlices;
+                                            return (
+                                                <div 
+                                                    key={idx} 
+                                                    className={`h-full flex-1 border-r-2 ${idx === (isSplit ? commonDen : level.cakeB.den) - 1 ? 'border-r-0' : 'border-slate-300'} ${isSplit ? 'border-dashed border-blue-400' : ''} transition-all duration-300 relative flex items-center justify-center`}
+                                                >
+                                                    {isFilled && (
+                                                        <div className="w-full h-full cake-pattern-milk opacity-90 rounded-sm animate-fade-in flex items-center justify-center">
+                                                            <span className="text-xs font-bold text-white drop-shadow bg-blue-700/40 px-1 rounded">🥛</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <span className="text-xs sm:text-sm font-medium text-amber-800">
+                                        {isSplit ? `(= ${newNumB}/${commonDen} ช่อง)` : `(แบ่ง ${level.cakeB.den} ช่อง - ${level.cakeB.name.replace('เค้ก', '')} ${level.cakeB.num})`}
+                                    </span>
+                                </div>
+
+                            </div>
+
+                            {/* Action Split Button */}
+                            <div className="mt-6 flex flex-col items-center">
+                                {!isSplit ? (
+                                    <button 
+                                        onClick={handleSplit}
+                                        className="pulse-btn bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-sm sm:text-lg px-6 py-3 rounded-2xl shadow-lg border-2 border-orange-300 flex items-center gap-2 transition"
+                                    >
+                                        ⚡ ปุ่มแอ็กชัน: "ผ่าแบ่งส่วนให้เท่ากัน!" (Auto-Split Overlay Tool)
+                                    </button>
+                                ) : (
+                                    <div className="bg-emerald-100 border-2 border-emerald-400 text-emerald-900 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 animate-bounce">
+                                        ✨ [ภาพหลังผ่าแบ่ง]: กลายเป็นตาราง {commonDen} ช่องเท่ากันแล้ว!
+                                    </div>
+                                )}
+                            </div>
+
+                        </div>
+
+                        {/* Equation Board */}
+                        <div className="bg-slate-900 text-white rounded-2xl p-4 sm:p-6 shadow-xl border-4 border-slate-700">
+                            <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-amber-400 text-center mb-4">
+                                📐 แผงสมการตัวเลขสัญลักษณ์ (Equation Board)
+                            </h2>
+
+                            <div className="flex flex-col items-center justify-center gap-3 font-mono">
+                                
+                                {/* Step 1: Original fractions */}
+                                <div className="flex items-center justify-center gap-3 sm:gap-6 text-lg sm:text-2xl font-bold">
+                                    <div className="bg-slate-800 px-3 py-2 rounded-xl border border-slate-600 text-orange-400">
+                                        {level.cakeA.num} / {level.cakeA.den}
+                                    </div>
+                                    <span className="text-amber-400 text-xl sm:text-3xl">+</span>
+                                    <div className="bg-slate-800 px-3 py-2 rounded-xl border border-slate-600 text-blue-400">
+                                        {level.cakeB.num} / {level.cakeB.den}
+                                    </div>
+                                    <span className="text-amber-400 text-xl sm:text-3xl">=</span>
+                                    <div className="flex items-center gap-1 bg-slate-800 p-2 rounded-xl border border-slate-600">
+                                        <span className="text-slate-400 text-base">[ ? / ? ]</span>
+                                    </div>
+                                </div>
+
+                                {/* Down Arrows */}
+                                <div className="flex items-center justify-center gap-16 text-amber-400 text-sm sm:text-base font-sans my-1">
+                                    <span>⬇️ (ย่อยส่วน)</span>
+                                    <span>⬇️ (ย่อยส่วน)</span>
+                                </div>
+
+                                {/* Step 2: Equivalent fractions after split */}
+                                <div className="flex items-center justify-center gap-3 sm:gap-6 text-lg sm:text-2xl font-bold">
+                                    <div className={`px-3 py-2 rounded-xl border transition ${isSplit ? 'bg-orange-950/80 border-orange-500 text-orange-300' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
+                                        {isSplit ? `${newNumA} / ${commonDen}` : `? / ?`}
+                                    </div>
+                                    <span className="text-amber-400 text-xl sm:text-3xl">+</span>
+                                    <div className={`px-3 py-2 rounded-xl border transition ${isSplit ? 'bg-blue-950/80 border-blue-500 text-blue-300' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
+                                        {isSplit ? `${newNumB} / ${commonDen}` : `? / ?`}
+                                    </div>
+                                    <span className="text-amber-400 text-xl sm:text-3xl">=</span>
+
+                                    {/* Answer Input Box */}
+                                    <div className="bg-amber-400/20 p-2 rounded-xl border-2 border-amber-400 flex items-center gap-1 sm:gap-2">
+                                        <input 
+                                            type="number" 
+                                            value={inputNum}
+                                            onChange={(e) => setInputNum(e.target.value)}
+                                            placeholder="?"
+                                            className="w-12 sm:w-16 text-center bg-white text-slate-900 rounded-lg py-1 font-extrabold focus:outline-none focus:ring-2 focus:ring-amber-500 text-base sm:text-2xl"
+                                        />
+                                        <span className="text-white text-xl sm:text-2xl font-bold">/</span>
+                                        <input 
+                                            type="number" 
+                                            value={inputDen}
+                                            onChange={(e) => setInputDen(e.target.value)}
+                                            placeholder="?"
+                                            className="w-12 sm:w-16 text-center bg-white text-slate-900 rounded-lg py-1 font-extrabold focus:outline-none focus:ring-2 focus:ring-amber-500 text-base sm:text-2xl"
+                                        />
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+
+                        {/* Feedback Banner */}
+                        {feedback && (
+                            <div className={`p-4 rounded-2xl font-bold text-center border-2 text-sm sm:text-base animate-fade-in ${
+                                feedback.type === 'success' ? 'bg-emerald-100 border-emerald-400 text-emerald-900' :
+                                feedback.type === 'error' ? 'bg-rose-100 border-rose-400 text-rose-900' :
+                                'bg-amber-100 border-amber-400 text-amber-900'
+                            }`}>
+                                {feedback.msg}
+                                {feedback.type === 'success' && (
+                                    <button 
+                                        onClick={nextLevel}
+                                        className="ml-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm px-4 py-1.5 rounded-xl shadow transition"
+                                    >
+                                        ไปยังด่านถัดไป ➔
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                    </div>
+
+                    {/* Bottom Control Bar */}
+                    <div className="bg-amber-100 px-4 py-3 sm:px-6 border-t-2 border-amber-300 flex items-center justify-between gap-4">
+                        <button 
+                            onClick={handleReset}
+                            className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold px-4 py-2 rounded-xl text-xs sm:text-base border border-slate-400 shadow-sm flex items-center gap-1 transition"
+                        >
+                            🔄 ลบทำใหม่
+                        </button>
+
+                        <button 
+                            onClick={handleCheck}
+                            className="bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-extrabold px-6 py-2.5 rounded-xl text-xs sm:text-base border-2 border-emerald-600 shadow-lg flex items-center gap-2 transition"
+                        >
+                            ✅ ส่งคำตอบ (CHECK)
+                        </button>
+                    </div>
+
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
